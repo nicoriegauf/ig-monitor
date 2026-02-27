@@ -24,12 +24,25 @@ async function check(username) {
     });
     const res = await req.text();
     console.log(req)
-    const sp =res.split('<meta property="og:description" content="');
+    const sp = res.split('<meta property="og:description" content="');
     console.log(sp.length);
-    if (sp.length>1) {
+    if (sp.length > 1) {
         return sp[1].split('-')[0];
     } else {
         return 'N/A'
+    }
+}
+
+function formatTime(totalSeconds) {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const totalMinutes = Math.floor(totalSeconds / 60);
+
+    if (totalMinutes >= 60) {
+        return `${totalMinutes} minutes`;
+    } else {
+        return `${hours} hours, ${minutes} minutes, ${seconds} seconds`;
     }
 }
 
@@ -37,8 +50,8 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const ALLOWED_USER_IDS = process.env.ALLOWED_USER_IDS ? process.env.ALLOWED_USER_IDS.split(',') : [];
 const CHECK_INTERVAL = parseInt(process.env.CHECK_INTERVAL) || 90000;
 
-let watchedAccounts = {}; 
-let storedFollowerData = {};  
+let watchedAccounts = {};
+let storedFollowerData = {};
 
 const allowedUserIds = [...ALLOWED_USER_IDS];
 const banWatchList = [];
@@ -60,54 +73,6 @@ client.once('ready', () => {
 function formatTimestamp(date) {
     return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
 }
-
-async function monitorAccount(message, username, url, expectedStatus, startTime, watchType) {
-    while (watchedAccounts[username]) {
-        try {
-            const info = await check(username);
-            console.log(`Monitoring ${username}`);
-            const currentTime = Date.now()
-            const timeDifference = Math.abs(currentTime - startTime) / 1000;
-            const timeDifferenceMinutes = Math.floor(timeDifference / 60);
-
-            if (expectedStatus === 'valid' && info.length == 3) {
-                const embed = new EmbedBuilder()
-                    .setTitle(`Account Has Been Smoked! | ${username} ✅`)
-                    .setDescription(`**Time Taken:** ${timeDifferenceMinutes} minutes\n${info}`)
-                    .setColor(0x000000)
-                    .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() });
-
-                await message.channel.send({ embeds: [embed] });
-                delete watchedAccounts[username];
-                const index = banWatchList.indexOf(username);
-                if (index > -1) {
-                    banWatchList.splice(index, 1);
-                }
-                break;
-            } else if (watchType === 'unbanwatch' && expectedStatus === 'valid' && info.length > 3) {
-                const embed = new EmbedBuilder()
-                    .setTitle(`Account has been reactivated Successfully! | ${username} ✅`)
-                    .setDescription(`**Time Taken:** ${timeDifferenceMinutes} minutes`+info)
-                    .setColor(0x000000)
-                    .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() });
-
-                await message.channel.send({ embeds: [embed] });
-                delete watchedAccounts[username];
-                const indexUnban = unbanWatchList.indexOf(username);
-                if (indexUnban > -1) {
-                    unbanWatchList.splice(indexUnban, 1);
-                }
-                break;
-            }
-        } catch (error) {
-            console.error(`Error during monitoring for ${username}:`, error);
-            sendErrorDM(message.author.id, error.message);
-        }
-
-        await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL));
-    }
-}
-
 
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
@@ -165,6 +130,7 @@ client.on('messageCreate', async (message) => {
             .setFooter({ text: 'Access granted successfully', iconURL: client.user.displayAvatarURL() });
 
         await message.channel.send({ embeds: [embed] });
+
     } else if (message.content.startsWith('!unbanwatch')) {
         const args = message.content.split(' ');
         if (args.length < 2 || !args[1]) {
@@ -181,9 +147,7 @@ client.on('messageCreate', async (message) => {
         }
 
         const username = args[1];
-        const url = `https://www.instagram.com/${username}/?hl=en`;
         const startTime = new Date();
-
         const info = await check(username);
 
         if (info.length == 3) {
@@ -201,24 +165,28 @@ client.on('messageCreate', async (message) => {
             watchedAccounts[username] = true;
             unbanWatchList.push(username);
 
-            let hasSentEmbed = false;  
+            let hasSentEmbed = false;
 
             const intv = setInterval(async function() {
                 try {
                     const infoa = await check(username);
                     const currentTime = Date.now();
-                    const timeDifference = Math.abs(currentTime - startTime) / 1000;
-                    const timeDifferenceMinutes = Math.floor(timeDifference / 60);
+                    const timeDifferenceSeconds = Math.floor(Math.abs(currentTime - startTime) / 1000);
+                    const timeDisplay = formatTime(timeDifferenceSeconds);
+
+                    const followerMatch = infoa.match(/(\d[\d,]*)\s*Followers/i);
+                    const followers = followerMatch ? followerMatch[1] : 'N/A';
 
                     if (infoa.length > 3 && !hasSentEmbed) {
                         const embed = new EmbedBuilder()
                             .setTitle(`Account has been reactivated Successfully! | ${username} ✅`)
-                            .setDescription(` Time Taken: ${timeDifferenceMinutes} minutes ` + infoa)
+                            .setDescription(`Monitoring Status: Account Recovered | @${username} 🏆✅ | Followers: ${followers} | ⏰ Time taken: ${timeDisplay}`)
                             .setColor(0x000000)
-                            .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() });
+                            .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() })
+                            .setTimestamp();
 
                         await message.channel.send({ embeds: [embed] });
-                        hasSentEmbed = true;  
+                        hasSentEmbed = true;
                         clearInterval(intv);
 
                         const indexUnban = unbanWatchList.indexOf(username);
@@ -242,6 +210,7 @@ client.on('messageCreate', async (message) => {
 
             await message.channel.send({ embeds: [embed] });
         }
+
     } else if (message.content.startsWith('!banwatch')) {
         const args = message.content.split(' ');
         if (args.length < 2 || !args[1]) {
@@ -258,10 +227,8 @@ client.on('messageCreate', async (message) => {
         }
 
         const username = args[1];
-        const url = `https://instagram.com/${username}`;
         const startTime = new Date();
-
-        const info = await check(username)
+        const info = await check(username);
 
         if (info.length != 3) {
             const embed = new EmbedBuilder()
@@ -276,25 +243,29 @@ client.on('messageCreate', async (message) => {
             await message.channel.send({ embeds: [embed] });
             watchedAccounts[username] = true;
             banWatchList.push(username);
+
             const intv = setInterval(async function() {
-                const infoa = await check(username)
+                const infoa = await check(username);
                 if (infoa.length == 3) {
-                    const currentTime = Date.now()
-                    const timeDifference = Math.abs(currentTime - startTime) / 1000;
-                    const timeDifferenceMinutes = Math.floor(timeDifference / 60);
+                    const currentTime = Date.now();
+                    const timeDifferenceSeconds = Math.floor(Math.abs(currentTime - startTime) / 1000);
+                    const timeDisplay = formatTime(timeDifferenceSeconds);
+
                     const embed = new EmbedBuilder()
                         .setTitle(`Account Has Been Smoked! | ${username} ✅`)
-                        .setDescription(`Time Taken: ${timeDifferenceMinutes} minutes ${info}`)
+                        .setDescription(`Monitoring Status: Account Banned | @${username} 🏆✅ | ⏰ Time taken: ${timeDisplay}`)
                         .setColor(0x000000)
-                        .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() });
+                        .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() })
+                        .setTimestamp();
+
                     const index = banWatchList.indexOf(username);
                     if (index > -1) {
                         banWatchList.splice(index, 1);
                     }
                     await message.channel.send({ embeds: [embed] });
-                    clearInterval(intv)
+                    clearInterval(intv);
                 }
-            }, CHECK_INTERVAL)
+            }, CHECK_INTERVAL);
         } else {
             const embed = new EmbedBuilder()
                 .setAuthor({ name: `Requested by @${message.author.username} ${formatTimestamp(startTime)}` })
@@ -306,6 +277,7 @@ client.on('messageCreate', async (message) => {
 
             await message.channel.send({ embeds: [embed] });
         }
+
     } else if (message.content.startsWith('!banlist')) {
         if (banWatchList.length === 0) {
             const embed = new EmbedBuilder()
@@ -324,6 +296,7 @@ client.on('messageCreate', async (message) => {
 
             await message.channel.send({ embeds: [embed] });
         }
+
     } else if (message.content.startsWith('!unbanlist')) {
         if (unbanWatchList.length === 0) {
             const embed = new EmbedBuilder()
@@ -342,6 +315,7 @@ client.on('messageCreate', async (message) => {
 
             await message.channel.send({ embeds: [embed] });
         }
+
     } else if (message.content.startsWith('!help')) {
         const embed = new EmbedBuilder()
             .setTitle('📖 Help - Available Commands')
@@ -351,7 +325,7 @@ client.on('messageCreate', async (message) => {
             **!banlist** - Displays a list of all accounts currently being monitored for bans.
             **!unbanlist** - Displays a list of all accounts currently being monitored for unbans.
             **!giveaccess <user id>** - Grants access to a user by adding them to the allowed list.
-            **!fake <username> <hh:mm:ss> <followers> <following> <posts>** - Sendet nach 30 Sekunden eine gefakte Unban-Meldung.
+            **!fake <username> <hh:mm:ss> <followers> <following> <posts>** - Sendet nach zufälliger Zeit (1-30 Min) eine gefakte Unban-Meldung.
             **!help** - Displays this help message.
             `)
             .setColor(0x000000)
@@ -359,14 +333,14 @@ client.on('messageCreate', async (message) => {
             .setFooter({ text: 'Requested by ' + message.author.username, iconURL: client.user.displayAvatarURL() });
 
         await message.channel.send({ embeds: [embed] });
+
     } else if (message.content.startsWith('!fake')) {
         const args = message.content.split(' ');
 
-        // Usage: !fake <username> <hh:mm:ss> <followers> <following> <posts>
         if (args.length < 6) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Falsche Verwendung')
-                .setDescription('**Usage:** `!fake <username> <hh:mm:ss> <followers> <following> <posts>`\n\n**Beispiel:** `!fake lenas_links 04:05:00 1173 43 72`\n\nDie Erfolgsmeldung wird nach 30 Sekunden gesendet.')
+                .setDescription('**Usage:** `!fake <username> <hh:mm:ss> <followers> <following> <posts>`\n\n**Beispiel:** `!fake lenas_links 04:05:00 1173 43 72`\n\nDie Erfolgsmeldung kommt nach einer zufälligen Zeit zwischen 1-30 Minuten.')
                 .setColor(0xFF0000)
                 .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() });
 
@@ -396,7 +370,6 @@ client.on('messageCreate', async (message) => {
         const seconds = parseInt(timeParts[2]);
         const totalMinutes = hours * 60 + minutes;
 
-        // Format je nach Dauer: unter 60 Minuten → hours/minutes/seconds, sonst → nur Minuten
         let timeDisplay;
         if (totalMinutes >= 60) {
             timeDisplay = `${totalMinutes} minutes`;
@@ -404,16 +377,23 @@ client.on('messageCreate', async (message) => {
             timeDisplay = `${hours} hours, ${minutes} minutes, ${seconds} seconds`;
         }
 
+        // Zufällige Wartezeit zwischen 1 und 30 Minuten in Millisekunden
+        const randomDelay = Math.floor(Math.random() * (30 * 60 - 60 + 1) + 60) * 1000;
+        const randomMinutes = Math.floor(randomDelay / 60000);
+        const randomSeconds = Math.floor((randomDelay % 60000) / 1000);
+
+        await message.channel.send(`⏳ Fake-Nachricht für **@${fakeUsername}** wird in **${randomMinutes} Minuten und ${randomSeconds} Sekunden** gesendet...`);
+
         setTimeout(async () => {
             const embed = new EmbedBuilder()
                 .setColor('#000000')
                 .setTitle(`Account has been reactivated Successfully! | ${fakeUsername} ✅`)
-                .setDescription(`Time Taken: ${timeDisplay} ${fakeFollowers.toLocaleString()} Followers, ${fakeFollowing} Following, ${fakePosts} Posts`)
+                .setDescription(`Monitoring Status: Account Recovered | @${fakeUsername} 🏆✅ | Followers: ${fakeFollowers.toLocaleString()} | ⏰ Time taken: ${timeDisplay}`)
                 .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() })
                 .setTimestamp();
 
             await message.channel.send({ embeds: [embed] });
-        }, 30000);
+        }, randomDelay);
     }
 });
 
