@@ -23,13 +23,13 @@ async function check(username) {
         "mode": "cors"
     });
     const res = await req.text();
-    console.log(req)
+    console.log(req);
     const sp = res.split('<meta property="og:description" content="');
     console.log(sp.length);
     if (sp.length > 1) {
         return sp[1].split('-')[0];
     } else {
-        return 'N/A'
+        return 'N/A';
     }
 }
 
@@ -38,12 +38,20 @@ function formatTime(totalSeconds) {
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
     const totalMinutes = Math.floor(totalSeconds / 60);
-
     if (totalMinutes >= 60) {
         return `${totalMinutes} minutes`;
     } else {
         return `${hours} hours, ${minutes} minutes, ${seconds} seconds`;
     }
+}
+
+function parseTimeDisplay(timeRaw) {
+    const parts = timeRaw.split(':');
+    const h = parseInt(parts[0]);
+    const m = parseInt(parts[1]);
+    const s = parseInt(parts[2]);
+    const totalMin = h * 60 + m;
+    return totalMin >= 60 ? `${totalMin} minutes` : `${h} hours, ${m} minutes, ${s} seconds`;
 }
 
 const TOKEN = process.env.DISCORD_TOKEN;
@@ -86,7 +94,6 @@ client.on('messageCreate', async (message) => {
                 .setDescription('You do not have permission to use this command.')
                 .setColor(0xFF0000)
                 .setFooter({ text: 'Permission required', iconURL: client.user.displayAvatarURL() });
-
             await message.channel.send({ embeds: [embed] });
             return;
         }
@@ -99,7 +106,6 @@ client.on('messageCreate', async (message) => {
                 .setColor(0xFF0000)
                 .setThumbnail(message.author.displayAvatarURL())
                 .setFooter({ text: 'Please try again', iconURL: client.user.displayAvatarURL() });
-
             await message.channel.send({ embeds: [embed] });
             return;
         }
@@ -114,7 +120,6 @@ client.on('messageCreate', async (message) => {
                 .setColor(0xFFC107)
                 .setThumbnail(message.author.displayAvatarURL())
                 .setFooter({ text: 'Access already granted', iconURL: client.user.displayAvatarURL() });
-
             await message.channel.send({ embeds: [embed] });
             return;
         }
@@ -128,7 +133,6 @@ client.on('messageCreate', async (message) => {
             .setColor(0x28A745)
             .setThumbnail(message.author.displayAvatarURL())
             .setFooter({ text: 'Access granted successfully', iconURL: client.user.displayAvatarURL() });
-
         await message.channel.send({ embeds: [embed] });
 
     } else if (message.content.startsWith('!unbanwatch')) {
@@ -141,7 +145,6 @@ client.on('messageCreate', async (message) => {
                 .setColor(0xFF0000)
                 .setThumbnail(message.author.displayAvatarURL())
                 .setFooter({ text: 'Please try again', iconURL: client.user.displayAvatarURL() });
-
             await message.channel.send({ embeds: [embed] });
             return;
         }
@@ -159,8 +162,8 @@ client.on('messageCreate', async (message) => {
                 .setThumbnail(message.author.displayAvatarURL())
                 .setFooter({ text: 'Monitoring in progress', iconURL: client.user.displayAvatarURL() })
                 .setImage('https://media.giphy.com/media/niNTPEoAhOSli/giphy.gif');
-
             await message.channel.send({ embeds: [embed] });
+
             unbancache[username] = info;
             watchedAccounts[username] = true;
             unbanWatchList.push(username);
@@ -171,28 +174,25 @@ client.on('messageCreate', async (message) => {
                 try {
                     const infoa = await check(username);
                     const currentTime = Date.now();
-                    const timeDifferenceSeconds = Math.floor(Math.abs(currentTime - startTime) / 1000);
-                    const timeDisplay = formatTime(timeDifferenceSeconds);
+                    const timeDiffSeconds = Math.floor(Math.abs(currentTime - startTime) / 1000);
+                    const timeDisplay = formatTime(timeDiffSeconds);
 
                     const followerMatch = infoa.match(/(\d[\d,]*)\s*Followers/i);
                     const followers = followerMatch ? followerMatch[1] : 'N/A';
 
                     if (infoa.length > 3 && !hasSentEmbed) {
                         const embed = new EmbedBuilder()
-                            .setTitle(`Account has been reactivated Successfully! | ${username} ✅`)
-                            .setDescription(`Account Recovered | @${username} 🏆✅ | Followers: ${followers} | ⏱ Time taken: ${timeDisplay}`)
-                            .setColor(0x000000)
+                            .setColor('#000000')
+                            .setTitle(`Account Recovered | @${username} 🏆✅`)
+                            .setDescription(`Followers: ${followers} | ⏱ Time taken: ${timeDisplay}`)
                             .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() })
                             .setTimestamp();
-
                         await message.channel.send({ embeds: [embed] });
                         hasSentEmbed = true;
                         clearInterval(intv);
 
                         const indexUnban = unbanWatchList.indexOf(username);
-                        if (indexUnban > -1) {
-                            unbanWatchList.splice(indexUnban, 1);
-                        }
+                        if (indexUnban > -1) unbanWatchList.splice(indexUnban, 1);
                     }
                 } catch (error) {
                     console.error(`Error during monitoring for ${username}:`, error);
@@ -207,7 +207,6 @@ client.on('messageCreate', async (message) => {
                 .setColor(0xFF0000)
                 .setThumbnail(message.author.displayAvatarURL())
                 .setFooter({ text: 'Please try again', iconURL: client.user.displayAvatarURL() });
-
             await message.channel.send({ embeds: [embed] });
         }
 
@@ -221,7 +220,6 @@ client.on('messageCreate', async (message) => {
                 .setColor(0xFF0000)
                 .setThumbnail(message.author.displayAvatarURL())
                 .setFooter({ text: 'Please try again', iconURL: client.user.displayAvatarURL() });
-
             await message.channel.send({ embeds: [embed] });
             return;
         }
@@ -239,8 +237,8 @@ client.on('messageCreate', async (message) => {
                 .setThumbnail(message.author.displayAvatarURL())
                 .setFooter({ text: 'Monitoring in progress', iconURL: client.user.displayAvatarURL() })
                 .setImage('https://media.giphy.com/media/niNTPEoAhOSli/giphy.gif');
-
             await message.channel.send({ embeds: [embed] });
+
             watchedAccounts[username] = true;
             banWatchList.push(username);
 
@@ -248,20 +246,18 @@ client.on('messageCreate', async (message) => {
                 const infoa = await check(username);
                 if (infoa.length == 3) {
                     const currentTime = Date.now();
-                    const timeDifferenceSeconds = Math.floor(Math.abs(currentTime - startTime) / 1000);
-                    const timeDisplay = formatTime(timeDifferenceSeconds);
+                    const timeDiffSeconds = Math.floor(Math.abs(currentTime - startTime) / 1000);
+                    const timeDisplay = formatTime(timeDiffSeconds);
 
                     const embed = new EmbedBuilder()
-                        .setTitle(`Account Has Been Smoked! | ${username} ✅`)
-                        .setDescription(`@${username} 🏆✅ | ⏰ Time taken: ${timeDisplay}`)
-                        .setColor(0x000000)
+                        .setColor('#000000')
+                        .setTitle(`Account Has Been Smoked! | @${username} ✅`)
+                        .setDescription(`⏱ Time taken: ${timeDisplay}`)
                         .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() })
                         .setTimestamp();
 
                     const index = banWatchList.indexOf(username);
-                    if (index > -1) {
-                        banWatchList.splice(index, 1);
-                    }
+                    if (index > -1) banWatchList.splice(index, 1);
                     await message.channel.send({ embeds: [embed] });
                     clearInterval(intv);
                 }
@@ -274,7 +270,6 @@ client.on('messageCreate', async (message) => {
                 .setColor(0xFF0000)
                 .setThumbnail(message.author.displayAvatarURL())
                 .setFooter({ text: 'Please try again', iconURL: client.user.displayAvatarURL() });
-
             await message.channel.send({ embeds: [embed] });
         }
 
@@ -285,15 +280,13 @@ client.on('messageCreate', async (message) => {
                 .setDescription('No accounts are currently being monitored for bans.')
                 .setColor(0x000000)
                 .setFooter({ text: 'Ban watch list is empty', iconURL: client.user.displayAvatarURL() });
-
             await message.channel.send({ embeds: [embed] });
         } else {
             const embed = new EmbedBuilder()
                 .setTitle('📜 Ban Watch List')
-                .setDescription(banWatchList.map(username => `• **@${username}**`).join('\n'))
+                .setDescription(banWatchList.map(u => `• **@${u}**`).join('\n'))
                 .setColor(0x000000)
                 .setFooter({ text: 'Current ban watch list', iconURL: client.user.displayAvatarURL() });
-
             await message.channel.send({ embeds: [embed] });
         }
 
@@ -304,15 +297,13 @@ client.on('messageCreate', async (message) => {
                 .setDescription('No accounts are currently being monitored for unbans.')
                 .setColor(0x000000)
                 .setFooter({ text: 'Unban watch list is empty', iconURL: client.user.displayAvatarURL() });
-
             await message.channel.send({ embeds: [embed] });
         } else {
             const embed = new EmbedBuilder()
                 .setTitle('📜 Unban Watch List')
-                .setDescription(unbanWatchList.map(username => `• **@${username}**`).join('\n'))
+                .setDescription(unbanWatchList.map(u => `• **@${u}**`).join('\n'))
                 .setColor(0x000000)
                 .setFooter({ text: 'Current unban watch list', iconURL: client.user.displayAvatarURL() });
-
             await message.channel.send({ embeds: [embed] });
         }
 
@@ -325,14 +316,59 @@ client.on('messageCreate', async (message) => {
             **!banlist** - Displays a list of all accounts currently being monitored for bans.
             **!unbanlist** - Displays a list of all accounts currently being monitored for unbans.
             **!giveaccess <user id>** - Grants access to a user by adding them to the allowed list.
-            **!fake <username> <hh:mm:ss> <followers>** - Sendet nach zufälliger Zeit (1-30 Min) eine gefakte Unban-Meldung.
+            **!fakefast <username> <hh:mm:ss> <followers>** - Sendet nach 30 Sekunden eine Test-Nachricht.
+            **!fake <username> <hh:mm:ss> <followers>** - Sendet nach zufälliger Zeit (1-30 Min) eine Fake-Nachricht.
             **!help** - Displays this help message.
             `)
             .setColor(0x000000)
             .setThumbnail('https://media.giphy.com/media/or0s8qzLMNyJW/giphy.gif')
             .setFooter({ text: 'Requested by ' + message.author.username, iconURL: client.user.displayAvatarURL() });
-
         await message.channel.send({ embeds: [embed] });
+
+    } else if (message.content.startsWith('!fakefast')) {
+        const args = message.content.split(' ');
+
+        if (args.length < 4) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Falsche Verwendung')
+                .setDescription('**Usage:** `!fakefast <username> <hh:mm:ss> <followers>`\n\n**Beispiel:** `!fakefast lenas_links 00:11:28 1173`\n\nDie Nachricht kommt nach **30 Sekunden** (zum Testen).')
+                .setColor(0xFF0000)
+                .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() });
+            await message.channel.send({ embeds: [embed] });
+            return;
+        }
+
+        const ffUsername = args[1];
+        const ffTimeRaw = args[2];
+        const ffFollowers = parseInt(args[3]);
+
+        const ffParts = ffTimeRaw.split(':');
+        if (ffParts.length !== 3 || ffParts.some(p => isNaN(parseInt(p)))) {
+            await message.channel.send('❌ Zeit muss im Format `hh:mm:ss` angegeben werden. Beispiel: `00:11:28`');
+            return;
+        }
+        if (isNaN(ffFollowers)) {
+            await message.channel.send('❌ Follower müssen eine Zahl sein.');
+            return;
+        }
+
+        const ffH = parseInt(ffParts[0]);
+        const ffM = parseInt(ffParts[1]);
+        const ffS = parseInt(ffParts[2]);
+        const ffTotalMin = ffH * 60 + ffM;
+        const ffTimeDisplay = ffTotalMin >= 60 ? `${ffTotalMin} minutes` : `${ffH} hours, ${ffM} minutes, ${ffS} seconds`;
+
+        await message.channel.send(`⏳ Test-Nachricht für **@${ffUsername}** kommt in **30 Sekunden**...`);
+
+        setTimeout(async () => {
+            const embed = new EmbedBuilder()
+                .setColor('#000000')
+                .setTitle(`Account Recovered | @${ffUsername} 🏆✅`)
+                .setDescription(`Followers: ${ffFollowers} | ⏱ Time taken: ${ffTimeDisplay}`)
+                .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() })
+                .setTimestamp();
+            await message.channel.send({ embeds: [embed] });
+        }, 30000);
 
     } else if (message.content.startsWith('!fake')) {
         const args = message.content.split(' ');
@@ -343,7 +379,6 @@ client.on('messageCreate', async (message) => {
                 .setDescription('**Usage:** `!fake <username> <hh:mm:ss> <followers>`\n\n**Beispiel:** `!fake lenas_links 04:05:00 1173`\n\nDie Erfolgsmeldung kommt nach einer zufälligen Zeit zwischen 1-30 Minuten.')
                 .setColor(0xFF0000)
                 .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() });
-
             await message.channel.send({ embeds: [embed] });
             return;
         }
@@ -357,7 +392,6 @@ client.on('messageCreate', async (message) => {
             await message.channel.send('❌ Zeit muss im Format `hh:mm:ss` angegeben werden. Beispiel: `00:11:28`');
             return;
         }
-
         if (isNaN(fakeFollowers)) {
             await message.channel.send('❌ Follower müssen eine Zahl sein.');
             return;
@@ -367,15 +401,8 @@ client.on('messageCreate', async (message) => {
         const minutes = parseInt(timeParts[1]);
         const seconds = parseInt(timeParts[2]);
         const totalMinutes = hours * 60 + minutes;
+        const timeDisplay = totalMinutes >= 60 ? `${totalMinutes} minutes` : `${hours} hours, ${minutes} minutes, ${seconds} seconds`;
 
-        let timeDisplay;
-        if (totalMinutes >= 60) {
-            timeDisplay = `${totalMinutes} minutes`;
-        } else {
-            timeDisplay = `${hours} hours, ${minutes} minutes, ${seconds} seconds`;
-        }
-
-        // Zufällige Wartezeit zwischen 1 und 30 Minuten in Millisekunden
         const randomDelay = Math.floor(Math.random() * (30 * 60 - 60 + 1) + 60) * 1000;
         const randomMinutes = Math.floor(randomDelay / 60000);
         const randomSeconds = Math.floor((randomDelay % 60000) / 1000);
@@ -385,11 +412,10 @@ client.on('messageCreate', async (message) => {
         setTimeout(async () => {
             const embed = new EmbedBuilder()
                 .setColor('#000000')
-                .setTitle(`Account has been reactivated Successfully! | ${fakeUsername} ✅`)
-                .setDescription(`Account Recovered | @${fakeUsername} 🏆✅ | Followers: ${fakeFollowers} | ⏱ Time taken: ${timeDisplay}`)
+                .setTitle(`Account Recovered | @${fakeUsername} 🏆✅`)
+                .setDescription(`Followers: ${fakeFollowers} | ⏱ Time taken: ${timeDisplay}`)
                 .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() })
                 .setTimestamp();
-
             await message.channel.send({ embeds: [embed] });
         }, randomDelay);
     }
@@ -405,7 +431,6 @@ async function sendErrorDM(userId, errorMessage) {
             .setColor(0xFF0000)
             .setFooter({ text: 'Please try again later', iconURL: client.user.displayAvatarURL() })
             .setImage('https://media.giphy.com/media/niNTPEoAhOSli/giphy.gif');
-
         await user.send({ embeds: [embed] });
     } catch (dmError) {
         console.error('Failed to send error DM:', dmError);
