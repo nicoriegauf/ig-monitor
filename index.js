@@ -180,7 +180,7 @@ client.on('messageCreate', async (message) => {
                     if (infoa.length > 3 && !hasSentEmbed) {
                         const embed = new EmbedBuilder()
                             .setTitle(`Account has been reactivated Successfully! | ${username} ✅`)
-                            .setDescription(`Monitoring Status: Account Recovered | @${username} 🏆✅ | Followers: ${followers} | ⏰ Time taken: ${timeDisplay}`)
+                            .setDescription(`Account Recovered | @${username} 🏆✅ | Followers: ${followers} | ⏱ Time taken: ${timeDisplay}`)
                             .setColor(0x000000)
                             .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() })
                             .setTimestamp();
@@ -253,7 +253,7 @@ client.on('messageCreate', async (message) => {
 
                     const embed = new EmbedBuilder()
                         .setTitle(`Account Has Been Smoked! | ${username} ✅`)
-                        .setDescription(`Monitoring Status: Account Banned | @${username} 🏆✅ | ⏰ Time taken: ${timeDisplay}`)
+                        .setDescription(`@${username} 🏆✅ | ⏰ Time taken: ${timeDisplay}`)
                         .setColor(0x000000)
                         .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() })
                         .setTimestamp();
@@ -386,7 +386,7 @@ client.on('messageCreate', async (message) => {
             const embed = new EmbedBuilder()
                 .setColor('#000000')
                 .setTitle(`Account has been reactivated Successfully! | ${fakeUsername} ✅`)
-                .setDescription(`Monitoring Status: Account Recovered | @${fakeUsername} 🏆✅ | Followers: ${fakeFollowers.toLocaleString()} | ⏰ Time taken: ${timeDisplay}`)
+                .setDescription(`Account Recovered | @${fakeUsername} 🏆✅ | Followers: ${fakeFollowers} | ⏱ Time taken: ${timeDisplay}`)
                 .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() })
                 .setTimestamp();
 
