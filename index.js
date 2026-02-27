@@ -325,7 +325,7 @@ client.on('messageCreate', async (message) => {
             **!banlist** - Displays a list of all accounts currently being monitored for bans.
             **!unbanlist** - Displays a list of all accounts currently being monitored for unbans.
             **!giveaccess <user id>** - Grants access to a user by adding them to the allowed list.
-            **!fake <username> <hh:mm:ss> <followers> <following> <posts>** - Sendet nach zufälliger Zeit (1-30 Min) eine gefakte Unban-Meldung.
+            **!fake <username> <hh:mm:ss> <followers>** - Sendet nach zufälliger Zeit (1-30 Min) eine gefakte Unban-Meldung.
             **!help** - Displays this help message.
             `)
             .setColor(0x000000)
@@ -337,10 +337,10 @@ client.on('messageCreate', async (message) => {
     } else if (message.content.startsWith('!fake')) {
         const args = message.content.split(' ');
 
-        if (args.length < 6) {
+        if (args.length < 4) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Falsche Verwendung')
-                .setDescription('**Usage:** `!fake <username> <hh:mm:ss> <followers> <following> <posts>`\n\n**Beispiel:** `!fake lenas_links 04:05:00 1173 43 72`\n\nDie Erfolgsmeldung kommt nach einer zufälligen Zeit zwischen 1-30 Minuten.')
+                .setDescription('**Usage:** `!fake <username> <hh:mm:ss> <followers>`\n\n**Beispiel:** `!fake lenas_links 04:05:00 1173`\n\nDie Erfolgsmeldung kommt nach einer zufälligen Zeit zwischen 1-30 Minuten.')
                 .setColor(0xFF0000)
                 .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() });
 
@@ -351,8 +351,6 @@ client.on('messageCreate', async (message) => {
         const fakeUsername = args[1];
         const fakeTimeRaw = args[2];
         const fakeFollowers = parseInt(args[3]);
-        const fakeFollowing = parseInt(args[4]);
-        const fakePosts = parseInt(args[5]);
 
         const timeParts = fakeTimeRaw.split(':');
         if (timeParts.length !== 3 || timeParts.some(p => isNaN(parseInt(p)))) {
@@ -360,8 +358,8 @@ client.on('messageCreate', async (message) => {
             return;
         }
 
-        if ([fakeFollowers, fakeFollowing, fakePosts].some(isNaN)) {
-            await message.channel.send('❌ Follower, Following und Posts müssen Zahlen sein.');
+        if (isNaN(fakeFollowers)) {
+            await message.channel.send('❌ Follower müssen eine Zahl sein.');
             return;
         }
 
