@@ -211,11 +211,11 @@ client.on('messageCreate', async (message) => {
                     const timeDifferenceMinutes = Math.floor(timeDifference / 60);
 
                     if (infoa.length > 3 && !hasSentEmbed) {
-            const embed = new EmbedBuilder()
-                .setTitle(`Account has been reactivated Successfully! | ${username} ✅`)
-                .setDescription(` Time Taken: ${timeDifferenceMinutes} minutes ` + infoa)
-                .setColor(0x000000)
-                .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() });
+                        const embed = new EmbedBuilder()
+                            .setTitle(`Account has been reactivated Successfully! | ${username} ✅`)
+                            .setDescription(` Time Taken: ${timeDifferenceMinutes} minutes ` + infoa)
+                            .setColor(0x000000)
+                            .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() });
 
                         await message.channel.send({ embeds: [embed] });
                         hasSentEmbed = true;  
@@ -351,6 +351,7 @@ client.on('messageCreate', async (message) => {
             **!banlist** - Displays a list of all accounts currently being monitored for bans.
             **!unbanlist** - Displays a list of all accounts currently being monitored for unbans.
             **!giveaccess <user id>** - Grants access to a user by adding them to the allowed list.
+            **!fake <username> <hh:mm:ss> <followers> <following> <posts>** - Sendet nach 30 Sekunden eine gefakte Unban-Meldung.
             **!help** - Displays this help message.
             `)
             .setColor(0x000000)
@@ -358,15 +359,61 @@ client.on('messageCreate', async (message) => {
             .setFooter({ text: 'Requested by ' + message.author.username, iconURL: client.user.displayAvatarURL() });
 
         await message.channel.send({ embeds: [embed] });
-    }else if (message.content.startsWith('!fake')) {
-        const embed = new EmbedBuilder()
-            .setColor('#000000')
-            .setTitle('Account has been smoked! ✅ | example_username')
-            .setDescription(`Time Taken: 0hr 2m 53s | Followers: 65`)
-            .setFooter({ text: 'Monitor Bot v1' })
-            .setTimestamp();
+    } else if (message.content.startsWith('!fake')) {
+        const args = message.content.split(' ');
 
-        message.channel.send({ embeds: [embed] });
+        // Usage: !fake <username> <hh:mm:ss> <followers> <following> <posts>
+        if (args.length < 6) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Falsche Verwendung')
+                .setDescription('**Usage:** `!fake <username> <hh:mm:ss> <followers> <following> <posts>`\n\n**Beispiel:** `!fake lenas_links 04:05:00 1173 43 72`\n\nDie Erfolgsmeldung wird nach 30 Sekunden gesendet.')
+                .setColor(0xFF0000)
+                .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() });
+
+            await message.channel.send({ embeds: [embed] });
+            return;
+        }
+
+        const fakeUsername = args[1];
+        const fakeTimeRaw = args[2];
+        const fakeFollowers = parseInt(args[3]);
+        const fakeFollowing = parseInt(args[4]);
+        const fakePosts = parseInt(args[5]);
+
+        const timeParts = fakeTimeRaw.split(':');
+        if (timeParts.length !== 3 || timeParts.some(p => isNaN(parseInt(p)))) {
+            await message.channel.send('❌ Zeit muss im Format `hh:mm:ss` angegeben werden. Beispiel: `00:11:28`');
+            return;
+        }
+
+        if ([fakeFollowers, fakeFollowing, fakePosts].some(isNaN)) {
+            await message.channel.send('❌ Follower, Following und Posts müssen Zahlen sein.');
+            return;
+        }
+
+        const hours = parseInt(timeParts[0]);
+        const minutes = parseInt(timeParts[1]);
+        const seconds = parseInt(timeParts[2]);
+        const totalMinutes = hours * 60 + minutes;
+
+        // Format je nach Dauer: unter 60 Minuten → hours/minutes/seconds, sonst → nur Minuten
+        let timeDisplay;
+        if (totalMinutes >= 60) {
+            timeDisplay = `${totalMinutes} minutes`;
+        } else {
+            timeDisplay = `${hours} hours, ${minutes} minutes, ${seconds} seconds`;
+        }
+
+        setTimeout(async () => {
+            const embed = new EmbedBuilder()
+                .setColor('#000000')
+                .setTitle(`Account has been reactivated Successfully! | ${fakeUsername} ✅`)
+                .setDescription(`Time Taken: ${timeDisplay} ${fakeFollowers.toLocaleString()} Followers, ${fakeFollowing} Following, ${fakePosts} Posts`)
+                .setFooter({ text: 'Monitor Bot v1', iconURL: client.user.displayAvatarURL() })
+                .setTimestamp();
+
+            await message.channel.send({ embeds: [embed] });
+        }, 30000);
     }
 });
 
@@ -386,6 +433,5 @@ async function sendErrorDM(userId, errorMessage) {
         console.error('Failed to send error DM:', dmError);
     }
 }
-
 
 client.login(TOKEN);
