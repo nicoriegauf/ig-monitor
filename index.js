@@ -232,18 +232,3 @@ async function sendErrorDM(userId, errorMessage) {
 }
 
 client.login(TOKEN);
-```
-
-**Danach wie immer:**
-```
-git add index.js
-git commit -m "remove links, update fake commands"
-git push
-```
-```
-node index.js
-```
-
-**Neues Fake-Format:**
-```
-!fake cr7fan 00:08:14 3247 00:28:03
