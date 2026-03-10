@@ -5,9 +5,9 @@ var bancache = {};
 var unbancache = {};
 
 async function check(username) {
-    const req = await fetch("https://instagram.com/"+username+'/', {
-        "credentials": "omit",
-        "headers": {
+    const req = await fetch("https://instagram.com/" + username + '/', {
+        credentials: "omit",
+        headers: {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
@@ -19,16 +19,21 @@ async function check(username) {
             "Sec-Fetch-User": "?1",
             "Priority": "u=4"
         },
-        "method": "GET",
-        "mode": "cors"
+        method: "GET",
+        mode: "cors"
     });
     const res = await req.text();
     const sp = res.split('<meta property="og:description" content="');
     if (sp.length > 1) {
-        return sp[1].split('-')[0];
+        return sp[1].split('"')[0];
     } else {
         return 'N/A';
     }
+}
+
+function parseFollowers(infoString) {
+    const match = infoString.match(/([\d,]+)\s*Followers/i);
+    return match ? match[1] : 'N/A';
 }
 
 function formatTime(totalSeconds) {
@@ -37,9 +42,9 @@ function formatTime(totalSeconds) {
     const seconds = totalSeconds % 60;
     const totalMinutes = Math.floor(totalSeconds / 60);
     if (totalMinutes >= 60) {
-        return `${totalMinutes} minutes`;
+        return totalMinutes + ' minutes';
     } else {
-        return `${hours} hours, ${minutes} minutes, ${seconds} seconds`;
+        return hours + ' hours, ' + minutes + ' minutes, ' + seconds + ' seconds';
     }
 }
 
@@ -55,14 +60,14 @@ function parseHHMMSS(timeRaw) {
 
 function timeToDisplay(h, m, s) {
     const totalMin = h * 60 + m;
-    return totalMin >= 60 ? `${totalMin} minutes` : `${h} hours, ${m} minutes, ${s} seconds`;
+    return totalMin >= 60 ? totalMin + ' minutes' : h + ' hours, ' + m + ' minutes, ' + s + ' seconds';
 }
 
 function buildRecoveredEmbed(username, followers, timeDisplay) {
     return new EmbedBuilder()
         .setColor('#000000')
-        .setTitle(`Account Recovered | @${username} 🏆✅`)
-        .setDescription(`Followers: ${followers} | ⏱ Time taken: ${timeDisplay}`);
+        .setTitle('Account Recovered | @' + username + ' 🏆✅')
+        .setDescription('Followers: ' + followers + ' | ⏱ Time taken: ' + timeDisplay);
 }
 
 const TOKEN = process.env.DISCORD_TOKEN;
@@ -84,7 +89,7 @@ const client = new Client({
 });
 
 client.once('ready', () => {
-    console.log(`We have logged in as ${client.user.tag}`);
+    console.log('We have logged in as ' + client.user.tag);
 });
 
 client.on('messageCreate', async (message) => {
@@ -97,21 +102,25 @@ client.on('messageCreate', async (message) => {
             return;
         }
         if (args.length < 2 || !args[1]) {
-            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Missing User ID').setDescription('Usage: `!giveaccess <user id>`').setColor(0xFF0000)] });
+            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Missing User ID').setDescription('Usage: !giveaccess <user id>').setColor(0xFF0000)] });
             return;
         }
         const userIdToAdd = args[1];
         if (allowedUserIds.includes(userIdToAdd)) {
-            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('👀 Already Has Access').setDescription(`User **${userIdToAdd}** already has access.`).setColor(0xFFC107)] });
+            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('👀 Already Has Access').setDescription('User ' + userIdToAdd + ' already has access.').setColor(0xFFC107)] });
             return;
         }
         allowedUserIds.push(userIdToAdd);
-        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('✅ Access Granted').setDescription(`User **${userIdToAdd}** has been granted access.`).setColor(0x28A745)] });
+        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('✅ Access Granted').setDescription('User ' + userIdToAdd + ' has been granted access.').setColor(0x28A745)] });
+
+    } else if (message.content.startsWith('!unbanlist')) {
+        const desc = unbanWatchList.length === 0 ? 'No accounts monitored for unbans.' : unbanWatchList.map(function(u) { return '• @' + u; }).join('\n');
+        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('📜 Unban Watch List').setDescription(desc).setColor(0x000000)] });
 
     } else if (message.content.startsWith('!unban')) {
         const args = message.content.split(' ');
         if (args.length < 2 || !args[1]) {
-            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Missing Username').setDescription('Usage: `!unban <username>`').setColor(0xFF0000)] });
+            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Missing Username').setDescription('Usage: !unban <username>').setColor(0xFF0000)] });
             return;
         }
         const username = args[1];
@@ -119,7 +128,7 @@ client.on('messageCreate', async (message) => {
         const info = await check(username);
 
         if (info.length == 3) {
-            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('👀 Account Banned').setDescription(`**@${username}** is currently banned. Monitoring for reactivation...`).setColor(0x000000)] });
+            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('👀 Account Banned').setDescription('@' + username + ' is currently banned. Monitoring for reactivation...').setColor(0x000000)] });
             unbancache[username] = info;
             watchedAccounts[username] = true;
             unbanWatchList.push(username);
@@ -129,8 +138,7 @@ client.on('messageCreate', async (message) => {
                     const infoa = await check(username);
                     const timeDiffSeconds = Math.floor(Math.abs(Date.now() - startTime) / 1000);
                     const timeDisplay = formatTime(timeDiffSeconds);
-                    const followerMatch = infoa.match(/(\d[\d,]*)\s*Followers/i);
-                    const followers = followerMatch ? followerMatch[1] : 'N/A';
+                    const followers = parseFollowers(infoa);
                     if (infoa.length > 3 && !hasSentEmbed) {
                         await message.channel.send({ embeds: [buildRecoveredEmbed(username, followers, timeDisplay)] });
                         hasSentEmbed = true;
@@ -139,17 +147,21 @@ client.on('messageCreate', async (message) => {
                         if (idx > -1) unbanWatchList.splice(idx, 1);
                     }
                 } catch (error) {
-                    console.error(`Error monitoring ${username}:`, error);
+                    console.error('Error monitoring ' + username + ':', error);
                 }
             }, CHECK_INTERVAL);
         } else {
-            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Not Banned').setDescription(`**@${username}** is not banned.`).setColor(0xFF0000)] });
+            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Not Banned').setDescription('@' + username + ' is not banned.').setColor(0xFF0000)] });
         }
+
+    } else if (message.content.startsWith('!banlist')) {
+        const desc = banWatchList.length === 0 ? 'No accounts monitored for bans.' : banWatchList.map(function(u) { return '• @' + u; }).join('\n');
+        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('📜 Ban Watch List').setDescription(desc).setColor(0x000000)] });
 
     } else if (message.content.startsWith('!ban')) {
         const args = message.content.split(' ');
         if (args.length < 2 || !args[1]) {
-            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Missing Username').setDescription('Usage: `!ban <username>`').setColor(0xFF0000)] });
+            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Missing Username').setDescription('Usage: !ban <username>').setColor(0xFF0000)] });
             return;
         }
         const username = args[1];
@@ -157,7 +169,7 @@ client.on('messageCreate', async (message) => {
         const info = await check(username);
 
         if (info.length != 3) {
-            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('👀 Monitoring Initiated').setDescription(`**@${username}** is currently valid. Monitoring for bans...`).setColor(0x000000)] });
+            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('👀 Monitoring Initiated').setDescription('@' + username + ' is currently valid. Monitoring for bans...').setColor(0x000000)] });
             watchedAccounts[username] = true;
             banWatchList.push(username);
             const intv = setInterval(async function() {
@@ -165,33 +177,25 @@ client.on('messageCreate', async (message) => {
                 if (infoa.length == 3) {
                     const timeDiffSeconds = Math.floor(Math.abs(Date.now() - startTime) / 1000);
                     const timeDisplay = formatTime(timeDiffSeconds);
-                    await message.channel.send({ embeds: [new EmbedBuilder().setColor('#000000').setTitle(`Account Has Been Smoked! | @${username} ✅`).setDescription(`⏱ Time taken: ${timeDisplay}`)] });
+                    await message.channel.send({ embeds: [new EmbedBuilder().setColor('#000000').setTitle('Account Has Been Smoked! | @' + username + ' ✅').setDescription('⏱ Time taken: ' + timeDisplay)] });
                     const idx = banWatchList.indexOf(username);
                     if (idx > -1) banWatchList.splice(idx, 1);
                     clearInterval(intv);
                 }
             }, CHECK_INTERVAL);
         } else {
-            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Already Banned').setDescription(`**@${username}** is already banned.`).setColor(0xFF0000)] });
+            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Already Banned').setDescription('@' + username + ' is already banned.').setColor(0xFF0000)] });
         }
 
-    } else if (message.content.startsWith('!banlist')) {
-        const desc = banWatchList.length === 0 ? 'No accounts monitored for bans.' : banWatchList.map(u => `• @${u}`).join('\n');
-        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('📜 Ban Watch List').setDescription(desc).setColor(0x000000)] });
-
-    } else if (message.content.startsWith('!unbanlist')) {
-        const desc = unbanWatchList.length === 0 ? 'No accounts monitored for unbans.' : unbanWatchList.map(u => `• @${u}`).join('\n');
-        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('📜 Unban Watch List').setDescription(desc).setColor(0x000000)] });
-
     } else if (message.content.startsWith('!help')) {
-        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('📖 Help').setDescription('**!ban <username>** - Monitor for ban.\n**!unban <username>** - Monitor for unban.\n**!banlist** - Show ban watch list.\n**!unbanlist** - Show unban watch list.\n**!giveaccess <id>** - Grant access.\n**!fake <username> <unbandauer> <followers> <sendezeit>** - Fake Nachricht.\n**!fakefast <username> <unbandauer> <followers> <sendezeit>** - Gleich wie !fake.\n**!help** - This message.').setColor(0x000000)] });
+        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('📖 Help').setDescription('!ban <username> - Monitor for ban.\n!unban <username> - Monitor for unban.\n!banlist - Show ban watch list.\n!unbanlist - Show unban watch list.\n!giveaccess <id> - Grant access.\n!fake <username> <unbandauer> <followers> <sendezeit> - Fake Nachricht.\n!fakefast <username> <unbandauer> <followers> <sendezeit> - Gleich wie !fake.\n!help - This message.').setColor(0x000000)] });
 
     } else if (message.content.startsWith('!fakefast') || message.content.startsWith('!fake')) {
         const args = message.content.split(' ');
         const cmd = args[0];
 
         if (args.length < 5) {
-            await message.channel.send(`❌ **Usage:** \`${cmd} <username> <unbandauer> <followers> <sendezeit>\`\n**Beispiel:** \`${cmd} cr7fan 00:08:14 3247 00:28:03\``);
+            await message.channel.send('❌ Usage: ' + cmd + ' <username> <unbandauer> <followers> <sendezeit>\nBeispiel: ' + cmd + ' cr7fan 00:08:14 3247 00:28:03');
             return;
         }
 
@@ -201,11 +205,11 @@ client.on('messageCreate', async (message) => {
         const fakeSendTime = parseHHMMSS(args[4]);
 
         if (!fakeUnbanTime || !fakeSendTime) {
-            await message.channel.send('❌ Zeit muss im Format `hh:mm:ss` angegeben werden.');
+            await message.channel.send('❌ Zeit muss im Format hh:mm:ss angegeben werden.');
             return;
         }
         if (isNaN(fakeFollowers)) {
-            await message.channel.send('❌ Follower müssen eine Zahl sein.');
+            await message.channel.send('❌ Follower muessen eine Zahl sein.');
             return;
         }
 
@@ -214,9 +218,9 @@ client.on('messageCreate', async (message) => {
         const fakeMin = Math.floor(fakeDelay / 60000);
         const fakeSec = Math.floor((fakeDelay % 60000) / 1000);
 
-        await message.channel.send(`⏳ Fake-Nachricht für **@${fakeUsername}** wird in **${fakeMin} Minuten und ${fakeSec} Sekunden** gesendet...`);
+        await message.channel.send('⏳ Fake-Nachricht fuer @' + fakeUsername + ' wird in ' + fakeMin + ' Minuten und ' + fakeSec + ' Sekunden gesendet...');
 
-        setTimeout(async () => {
+        setTimeout(async function() {
             await message.channel.send({ embeds: [buildRecoveredEmbed(fakeUsername, fakeFollowers, fakeTimeDisplay)] });
         }, fakeDelay);
     }
@@ -225,7 +229,7 @@ client.on('messageCreate', async (message) => {
 async function sendErrorDM(userId, errorMessage) {
     try {
         const user = await client.users.fetch(userId);
-        await user.send({ embeds: [new EmbedBuilder().setTitle('❌ Error').setDescription(`An error occurred: **${errorMessage}**`).setColor(0xFF0000)] });
+        await user.send({ embeds: [new EmbedBuilder().setTitle('❌ Error').setDescription('An error occurred: ' + errorMessage).setColor(0xFF0000)] });
     } catch (dmError) {
         console.error('Failed to send error DM:', dmError);
     }
