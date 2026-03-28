@@ -5,35 +5,36 @@ var bancache = {};
 var unbancache = {};
 
 async function check(username) {
-    const req = await fetch("https://instagram.com/" + username + '/', {
-        credentials: "omit",
+    const req = await fetch("https://www.instagram.com/api/v1/users/web_profile_info/?username=" + encodeURIComponent(username), {
         headers: {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Sec-GPC": "1",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Priority": "u=4"
+            "Accept": "*/*",
+            "X-IG-App-ID": "936619743392459",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Dest": "empty",
+            "Referer": "https://www.instagram.com/"
         },
-        method: "GET",
-        mode: "cors"
+        method: "GET"
     });
-    const res = await req.text();
-    const sp = res.split('<meta property="og:description" content="');
-    if (sp.length > 1) {
-        return sp[1].split('"')[0];
-    } else {
-        return 'N/A';
+    const status = req.status;
+    if (status !== 200) {
+        console.log('[API] ' + new Date().toISOString() + ' | @' + username + ' | HTTP ' + status + ' | ERROR');
+        return null;
     }
-}
-
-function parseFollowers(infoString) {
-    const match = infoString.match(/([\d,]+)\s*Followers/i);
-    return match ? match[1] : 'N/A';
+    const data = await req.json();
+    if (data.data && data.data.user) {
+        const user = data.data.user;
+        const followers = user.edge_followed_by ? user.edge_followed_by.count : 0;
+        console.log('[API] ' + new Date().toISOString() + ' | @' + username + ' | HTTP ' + status + ' | ACTIVE | Followers: ' + followers);
+        return {
+            active: true,
+            followers: followers,
+            fullName: user.full_name || username
+        };
+    }
+    console.log('[API] ' + new Date().toISOString() + ' | @' + username + ' | HTTP ' + status + ' | BANNED/NOT FOUND');
+    return null;
 }
 
 function formatTime(totalSeconds) {
@@ -78,6 +79,7 @@ let watchedAccounts = {};
 const allowedUserIds = [...ALLOWED_USER_IDS];
 const banWatchList = [];
 const unbanWatchList = [];
+const activeIntervals = {};
 
 const client = new Client({
     intents: [
@@ -113,6 +115,40 @@ client.on('messageCreate', async (message) => {
         allowedUserIds.push(userIdToAdd);
         await message.channel.send({ embeds: [new EmbedBuilder().setTitle('✅ Access Granted').setDescription('User ' + userIdToAdd + ' has been granted access.').setColor(0x28A745)] });
 
+    } else if (message.content.startsWith('!removeunban')) {
+        const args = message.content.split(' ');
+        if (args.length < 2 || !args[1]) {
+            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Missing Username').setDescription('Usage: !removeunban <username>').setColor(0xFF0000)] });
+            return;
+        }
+        const username = args[1];
+        const idx = unbanWatchList.indexOf(username);
+        if (idx === -1) {
+            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Not Found').setDescription('@' + username + ' is not on the unban watch list.').setColor(0xFF0000)] });
+            return;
+        }
+        unbanWatchList.splice(idx, 1);
+        delete watchedAccounts[username];
+        if (activeIntervals[username]) { clearInterval(activeIntervals[username]); delete activeIntervals[username]; }
+        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('✅ Removed').setDescription('@' + username + ' removed from unban watch list.').setColor(0x28A745)] });
+
+    } else if (message.content.startsWith('!removeban')) {
+        const args = message.content.split(' ');
+        if (args.length < 2 || !args[1]) {
+            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Missing Username').setDescription('Usage: !removeban <username>').setColor(0xFF0000)] });
+            return;
+        }
+        const username = args[1];
+        const idx = banWatchList.indexOf(username);
+        if (idx === -1) {
+            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Not Found').setDescription('@' + username + ' is not on the ban watch list.').setColor(0xFF0000)] });
+            return;
+        }
+        banWatchList.splice(idx, 1);
+        delete watchedAccounts[username];
+        if (activeIntervals[username]) { clearInterval(activeIntervals[username]); delete activeIntervals[username]; }
+        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('✅ Removed').setDescription('@' + username + ' removed from ban watch list.').setColor(0x28A745)] });
+
     } else if (message.content.startsWith('!unbanlist')) {
         const desc = unbanWatchList.length === 0 ? 'No accounts monitored for unbans.' : unbanWatchList.map(function(u) { return '• @' + u; }).join('\n');
         await message.channel.send({ embeds: [new EmbedBuilder().setTitle('📜 Unban Watch List').setDescription(desc).setColor(0x000000)] });
@@ -127,9 +163,8 @@ client.on('messageCreate', async (message) => {
         const startTime = new Date();
         const info = await check(username);
 
-        if (info.length == 3) {
+        if (info === null) {
             await message.channel.send({ embeds: [new EmbedBuilder().setTitle('👀 Account Banned').setDescription('@' + username + ' is currently banned. Monitoring for reactivation...').setColor(0x000000)] });
-            unbancache[username] = info;
             watchedAccounts[username] = true;
             unbanWatchList.push(username);
             let hasSentEmbed = false;
@@ -138,11 +173,11 @@ client.on('messageCreate', async (message) => {
                     const infoa = await check(username);
                     const timeDiffSeconds = Math.floor(Math.abs(Date.now() - startTime) / 1000);
                     const timeDisplay = formatTime(timeDiffSeconds);
-                    const followers = parseFollowers(infoa);
-                    if (infoa.length > 3 && !hasSentEmbed) {
-                        await message.channel.send({ embeds: [buildRecoveredEmbed(username, followers, timeDisplay)] });
+                    if (infoa !== null && !hasSentEmbed) {
+                        await message.channel.send({ embeds: [buildRecoveredEmbed(username, infoa.followers, timeDisplay)] });
                         hasSentEmbed = true;
                         clearInterval(intv);
+                        delete activeIntervals[username];
                         const idx = unbanWatchList.indexOf(username);
                         if (idx > -1) unbanWatchList.splice(idx, 1);
                     }
@@ -150,6 +185,7 @@ client.on('messageCreate', async (message) => {
                     console.error('Error monitoring ' + username + ':', error);
                 }
             }, CHECK_INTERVAL);
+            activeIntervals[username] = intv;
         } else {
             await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Not Banned').setDescription('@' + username + ' is not banned.').setColor(0xFF0000)] });
         }
@@ -168,27 +204,29 @@ client.on('messageCreate', async (message) => {
         const startTime = new Date();
         const info = await check(username);
 
-        if (info.length != 3) {
+        if (info !== null) {
             await message.channel.send({ embeds: [new EmbedBuilder().setTitle('👀 Monitoring Initiated').setDescription('@' + username + ' is currently valid. Monitoring for bans...').setColor(0x000000)] });
             watchedAccounts[username] = true;
             banWatchList.push(username);
             const intv = setInterval(async function() {
                 const infoa = await check(username);
-                if (infoa.length == 3) {
+                if (infoa === null) {
                     const timeDiffSeconds = Math.floor(Math.abs(Date.now() - startTime) / 1000);
                     const timeDisplay = formatTime(timeDiffSeconds);
                     await message.channel.send({ embeds: [new EmbedBuilder().setColor('#000000').setTitle('Account Has Been Smoked! | @' + username + ' ✅').setDescription('⏱ Time taken: ' + timeDisplay)] });
                     const idx = banWatchList.indexOf(username);
                     if (idx > -1) banWatchList.splice(idx, 1);
                     clearInterval(intv);
+                    delete activeIntervals[username];
                 }
             }, CHECK_INTERVAL);
+            activeIntervals[username] = intv;
         } else {
             await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Already Banned').setDescription('@' + username + ' is already banned.').setColor(0xFF0000)] });
         }
 
     } else if (message.content.startsWith('!help')) {
-        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('📖 Help').setDescription('!ban <username> - Monitor for ban.\n!unban <username> - Monitor for unban.\n!banlist - Show ban watch list.\n!unbanlist - Show unban watch list.\n!giveaccess <id> - Grant access.\n!fake <username> <unbandauer> <followers> <sendezeit> - Fake Nachricht.\n!fakefast <username> <unbandauer> <followers> <sendezeit> - Gleich wie !fake.\n!help - This message.').setColor(0x000000)] });
+        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('📖 Help').setDescription('!ban <username> - Monitor for ban.\n!unban <username> - Monitor for unban.\n!removeban <username> - Remove from ban watch list.\n!removeunban <username> - Remove from unban watch list.\n!banlist - Show ban watch list.\n!unbanlist - Show unban watch list.\n!giveaccess <id> - Grant access.\n!fake <username> <unbandauer> <followers> <sendezeit> - Fake Nachricht.\n!fakefast <username> <unbandauer> <followers> <sendezeit> - Gleich wie !fake.\n!help - This message.').setColor(0x000000)] });
 
     } else if (message.content.startsWith('!fakefast') || message.content.startsWith('!fake')) {
         const args = message.content.split(' ');
