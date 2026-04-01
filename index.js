@@ -24,9 +24,10 @@ function saveWatchlist(data) {
 }
 
 // Returns { status: 'active' | 'banned' | 'error', description: string | null }
-// 'active'  = account exists and has followers info
-// 'banned'  = og:description found but no followers keyword → account banned
-// 'error'   = no og:description at all → Instagram blocked the request
+// Detection based on comparing live accounts:
+//   active  → <title> contains username + og:description with "Followers"
+//   banned  → <title> is just "Instagram" (generic), no og:description
+//   error   → unexpected response (rate limit, network issue) → skip tick, retry later
 async function check(username) {
     try {
         const req = await fetch("https://instagram.com/" + username + '/', {
@@ -46,18 +47,22 @@ async function check(username) {
             method: "GET",
             mode: "cors"
         });
-        const res = await req.text();
-        const sp = res.split('<meta property="og:description" content="');
-        if (sp.length > 1) {
-            const description = sp[1].split('"')[0];
-            if (/followers/i.test(description)) {
-                return { status: 'active', description };
-            } else {
-                return { status: 'banned', description };
-            }
-        } else {
-            return { status: 'error', description: null };
+        const html = await req.text();
+
+        // Active account: og:description contains "Followers"
+        const ogDescMatch = html.match(/<meta property="og:description" content="([^"]+)"/);
+        if (ogDescMatch && /followers/i.test(ogDescMatch[1])) {
+            return { status: 'active', description: ogDescMatch[1] };
         }
+
+        // Banned account: title is just "Instagram" (no username, no profile data)
+        const titleMatch = html.match(/<title>(.*?)<\/title>/);
+        if (titleMatch && titleMatch[1].trim() === 'Instagram') {
+            return { status: 'banned', description: null };
+        }
+
+        // Anything else (partial response, login redirect, rate limit) → skip
+        return { status: 'error', description: null };
     } catch (e) {
         return { status: 'error', description: null };
     }
