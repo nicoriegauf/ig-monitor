@@ -35,6 +35,23 @@ function getNextProxy() {
     return url;
 }
 
+// Per-proxy stats for !status command
+const proxyStats = {};
+function initProxyStats() {
+    const keys = PROXY_URLS.length > 0 ? PROXY_URLS : ['direct'];
+    for (const url of keys) {
+        proxyStats[url] = { ok: 0, ratelimited: 0, error: 0, lastStatus: 'unknown', lastCheck: null };
+    }
+}
+function recordProxyStat(proxyUrl, status) {
+    const key = proxyUrl || 'direct';
+    if (!proxyStats[key]) proxyStats[key] = { ok: 0, ratelimited: 0, error: 0, lastStatus: 'unknown', lastCheck: null };
+    proxyStats[key][status === 'ok' ? 'ok' : status === 'ratelimited' ? 'ratelimited' : 'error']++;
+    proxyStats[key].lastStatus = status;
+    proxyStats[key].lastCheck = new Date();
+}
+initProxyStats();
+
 // Returns { status: 'active' | 'banned' | 'error', description: string | null }
 //   active  → og:description contains "Followers"
 //   banned  → <title> is exactly "Instagram" (no profile data) AND canary confirms no rate-limit
@@ -67,34 +84,39 @@ async function check(username) {
         // Active account: og:description contains "Followers"
         const ogDescMatch = html.match(/<meta property="og:description" content="([^"]+)"/);
         if (ogDescMatch && /followers/i.test(ogDescMatch[1])) {
-            console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | ACTIVE | ' + ogDescMatch[1].substring(0, 60) + (proxyUrl ? ' | proxy: ' + proxyUrl.split('@').pop() : ''));
+            console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | ACTIVE' + (proxyUrl ? ' | proxy: ' + proxyUrl.split('@').pop() : ''));
+            recordProxyStat(proxyUrl, 'ok');
             return { status: 'active', description: ogDescMatch[1] };
         }
 
         // Possible ban OR rate-limit — use canary to distinguish
         const titleMatch = html.match(/<title>(.*?)<\/title>/);
         if (titleMatch && titleMatch[1].trim() === 'Instagram') {
-            const rateLimited = await isRateLimited(fetchOptions);
+            const rateLimited = await isRateLimited(fetchOptions, proxyUrl);
             if (rateLimited) {
-                console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | RATE-LIMITED (canary failed) — skip');
+                console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | RATE-LIMITED — skip' + (proxyUrl ? ' | proxy: ' + proxyUrl.split('@').pop() : ''));
+                recordProxyStat(proxyUrl, 'ratelimited');
                 return { status: 'error', description: null };
             }
             console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | BANNED (canary ok)');
+            recordProxyStat(proxyUrl, 'ok');
             return { status: 'banned', description: null };
         }
 
         // Unexpected response
         console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | ERROR (title: ' + (titleMatch ? titleMatch[1].substring(0, 40) : 'none') + ')');
+        recordProxyStat(proxyUrl, 'error');
         return { status: 'error', description: null };
     } catch (e) {
         console.error('[check] ' + new Date().toISOString() + ' | @' + username + ' | EXCEPTION:', e.message);
+        recordProxyStat(proxyUrl, 'error');
         return { status: 'error', description: null };
     }
 }
 
 // Canary: fetch a known-always-active account with the same proxy/IP.
 // Returns true if we're rate-limited (canary also shows generic title).
-async function isRateLimited(fetchOptions) {
+async function isRateLimited(fetchOptions, proxyUrl) {
     try {
         const req = await fetch("https://instagram.com/cristiano/", fetchOptions);
         const html = await req.text();
@@ -365,8 +387,32 @@ client.on('messageCreate', async (message) => {
         }
         startBanMonitor(username, message.channel.id, startTime);
 
+    } else if (message.content.startsWith('!status')) {
+        const lines = [];
+
+        // Proxy health
+        const entries = Object.entries(proxyStats);
+        if (entries.length === 0 || (entries.length === 1 && entries[0][0] === 'direct')) {
+            lines.push('**Proxies:** Keine konfiguriert (direkte IP)');
+        } else {
+            lines.push('**Proxy Status:**');
+            for (const [url, s] of entries) {
+                const host = url === 'direct' ? 'direct' : url.split('@').pop();
+                const icon = s.lastStatus === 'ok' ? '🟢' : s.lastStatus === 'ratelimited' ? '🔴' : s.lastStatus === 'unknown' ? '⚪' : '🟡';
+                const checked = s.lastCheck ? '<t:' + Math.floor(s.lastCheck.getTime() / 1000) + ':R>' : 'noch nie';
+                lines.push(icon + ' `' + host + '` — OK: ' + s.ok + ' | RL: ' + s.ratelimited + ' | Err: ' + s.error + ' | zuletzt: ' + checked);
+            }
+        }
+
+        // Watchlists
+        lines.push('');
+        lines.push('**Unban Watch (' + unbanWatchList.length + '):** ' + (unbanWatchList.length ? unbanWatchList.map(u => '@' + u).join(', ') : '–'));
+        lines.push('**Ban Watch (' + banWatchList.length + '):** ' + (banWatchList.length ? banWatchList.map(u => '@' + u).join(', ') : '–'));
+
+        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('📊 Bot Status').setDescription(lines.join('\n')).setColor(0x000000)] });
+
     } else if (message.content.startsWith('!help')) {
-        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('📖 Help').setDescription('!ban <username> - Monitor for ban.\n!unban <username> - Monitor for unban.\n!removeban <username> - Remove from ban watch list.\n!removeunban <username> - Remove from unban watch list.\n!banlist - Show ban watch list.\n!unbanlist - Show unban watch list.\n!giveaccess <id> - Grant access.\n!fake <username> <unbandauer> <followers> <sendezeit> - Fake Nachricht.\n!fakefast <username> <unbandauer> <followers> <sendezeit> - Gleich wie !fake.\n!help - This message.').setColor(0x000000)] });
+        await message.channel.send({ embeds: [new EmbedBuilder().setTitle('📖 Help').setDescription('!ban <username> - Monitor for ban.\n!unban <username> - Monitor for unban.\n!removeban <username> - Remove from ban watch list.\n!removeunban <username> - Remove from unban watch list.\n!banlist - Show ban watch list.\n!unbanlist - Show unban watch list.\n!status - Proxy & Rate-Limit Status.\n!giveaccess <id> - Grant access.\n!fake <username> <unbandauer> <followers> <sendezeit> - Fake Nachricht.\n!fakefast <username> <unbandauer> <followers> <sendezeit> - Gleich wie !fake.\n!help - This message.').setColor(0x000000)] });
 
     } else if (message.content.startsWith('!fakefast') || message.content.startsWith('!fake')) {
         const args = message.content.split(' ');
