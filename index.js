@@ -1,5 +1,6 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 require('dotenv').config();
 
 const WATCHLIST_FILE = './watchlist.json';
@@ -23,52 +24,85 @@ function saveWatchlist(data) {
     }
 }
 
+// Proxy rotation — set PROXY_URLS=http://user:pass@host:port,http://... in .env
+// If empty, requests go out directly (no proxy)
+const PROXY_URLS = process.env.PROXY_URLS ? process.env.PROXY_URLS.split(',').map(s => s.trim()).filter(Boolean) : [];
+let proxyIndex = 0;
+function getNextProxy() {
+    if (PROXY_URLS.length === 0) return null;
+    const url = PROXY_URLS[proxyIndex % PROXY_URLS.length];
+    proxyIndex++;
+    return url;
+}
+
 // Returns { status: 'active' | 'banned' | 'error', description: string | null }
-// Tested against live reference accounts:
-//   active  → og:description contains "Followers" + <title> has username
-//   banned  → <title> is exactly "Instagram" (no profile data)
-//   error   → unexpected/partial response (rate limit, network issue) → skip tick
+//   active  → og:description contains "Followers"
+//   banned  → <title> is exactly "Instagram" (no profile data) AND canary confirms no rate-limit
+//   error   → unexpected/partial response or rate-limited → skip tick
 async function check(username) {
+    const proxyUrl = getNextProxy();
+    const fetchOptions = {
+        credentials: "omit",
+        headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Sec-GPC": "1",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Priority": "u=4"
+        },
+        method: "GET",
+        mode: "cors"
+    };
+    if (proxyUrl) fetchOptions.agent = new HttpsProxyAgent(proxyUrl);
+
     try {
-        const req = await fetch("https://instagram.com/" + username + '/', {
-            credentials: "omit",
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.5",
-                "Sec-GPC": "1",
-                "Upgrade-Insecure-Requests": "1",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Sec-Fetch-User": "?1",
-                "Priority": "u=4"
-            },
-            method: "GET",
-            mode: "cors"
-        });
+        const req = await fetch("https://instagram.com/" + username + '/', fetchOptions);
         const html = await req.text();
 
         // Active account: og:description contains "Followers"
         const ogDescMatch = html.match(/<meta property="og:description" content="([^"]+)"/);
         if (ogDescMatch && /followers/i.test(ogDescMatch[1])) {
-            console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | ACTIVE | ' + ogDescMatch[1].substring(0, 60));
+            console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | ACTIVE | ' + ogDescMatch[1].substring(0, 60) + (proxyUrl ? ' | proxy: ' + proxyUrl.split('@').pop() : ''));
             return { status: 'active', description: ogDescMatch[1] };
         }
 
-        // Banned account: title is just "Instagram" (no username, no profile data)
+        // Possible ban OR rate-limit — use canary to distinguish
         const titleMatch = html.match(/<title>(.*?)<\/title>/);
         if (titleMatch && titleMatch[1].trim() === 'Instagram') {
-            console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | BANNED');
+            const rateLimited = await isRateLimited(fetchOptions);
+            if (rateLimited) {
+                console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | RATE-LIMITED (canary failed) — skip');
+                return { status: 'error', description: null };
+            }
+            console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | BANNED (canary ok)');
             return { status: 'banned', description: null };
         }
 
-        // Anything else (partial response, login redirect, rate limit) → skip
+        // Unexpected response
         console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | ERROR (title: ' + (titleMatch ? titleMatch[1].substring(0, 40) : 'none') + ')');
         return { status: 'error', description: null };
     } catch (e) {
         console.error('[check] ' + new Date().toISOString() + ' | @' + username + ' | EXCEPTION:', e.message);
         return { status: 'error', description: null };
+    }
+}
+
+// Canary: fetch a known-always-active account with the same proxy/IP.
+// Returns true if we're rate-limited (canary also shows generic title).
+async function isRateLimited(fetchOptions) {
+    try {
+        const req = await fetch("https://instagram.com/cristiano/", fetchOptions);
+        const html = await req.text();
+        const ogDescMatch = html.match(/<meta property="og:description" content="([^"]+)"/);
+        if (ogDescMatch && /followers/i.test(ogDescMatch[1])) return false; // canary ok → not rate-limited
+        return true; // canary also broken → rate-limited
+    } catch (e) {
+        return true; // network error → treat as rate-limited
     }
 }
 
