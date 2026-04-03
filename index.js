@@ -52,86 +52,80 @@ function recordProxyStat(proxyUrl, status) {
 }
 initProxyStats();
 
-// Returns { status: 'active' | 'banned' | 'error', description: string | null }
-//   active  → og:description contains "Followers"
-//   banned  → <title> is exactly "Instagram" (no profile data) AND canary confirms no rate-limit
-//   error   → unexpected/partial response or rate-limited → skip tick
+// Returns { status: 'active' | 'banned' | 'error', followers: number | null }
+//   active  → API returns data.user with follower count
+//   banned  → API returns {"status":"ok"} with no user data
+//   error   → session expired, rate-limit or network issue → skip tick
 async function check(username) {
     const proxyUrl = getNextProxy();
-    const fetchOptions = {
-        credentials: "omit",
-        headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Sec-GPC": "1",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Priority": "u=4"
-        },
-        method: "GET",
-        mode: "cors"
+    const headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0",
+        "Accept": "*/*",
+        "X-IG-App-ID": "936619743392459",
+        "Referer": "https://www.instagram.com/",
     };
+    if (IG_SESSION_ID) headers["Cookie"] = "sessionid=" + IG_SESSION_ID;
+    const fetchOptions = { headers, method: "GET" };
     if (proxyUrl) fetchOptions.agent = new HttpsProxyAgent(proxyUrl);
 
     try {
-        const req = await fetch("https://instagram.com/" + username + '/', fetchOptions);
-        const html = await req.text();
+        const req = await fetch("https://www.instagram.com/api/v1/users/web_profile_info/?username=" + encodeURIComponent(username), fetchOptions);
 
-        // Active account: og:description contains "Followers"
-        const ogDescMatch = html.match(/<meta property="og:description" content="([^"]+)"/);
-        if (ogDescMatch && /followers/i.test(ogDescMatch[1])) {
-            console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | ACTIVE' + (proxyUrl ? ' | proxy: ' + proxyUrl.split('@').pop() : ''));
-            recordProxyStat(proxyUrl, 'ok');
-            return { status: 'active', description: ogDescMatch[1] };
+        if (req.status === 401 || req.status === 403) {
+            console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | SESSION EXPIRED (HTTP ' + req.status + ')');
+            recordProxyStat(proxyUrl, 'error');
+            return { status: 'error', followers: null };
+        }
+        if (req.status !== 200) {
+            console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | HTTP ' + req.status);
+            recordProxyStat(proxyUrl, 'ratelimited');
+            return { status: 'error', followers: null };
         }
 
-        // Possible ban OR rate-limit — use canary to distinguish
-        const titleMatch = html.match(/<title>(.*?)<\/title>/);
-        if (titleMatch && titleMatch[1].trim() === 'Instagram') {
-            const rateLimited = await isRateLimited(fetchOptions, proxyUrl);
-            if (rateLimited) {
-                console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | RATE-LIMITED — skip' + (proxyUrl ? ' | proxy: ' + proxyUrl.split('@').pop() : ''));
-                recordProxyStat(proxyUrl, 'ratelimited');
-                return { status: 'error', description: null };
-            }
-            console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | BANNED (canary ok)');
+        const json = await req.json();
+
+        if (json.data && json.data.user) {
+            const followers = json.data.user.edge_followed_by ? json.data.user.edge_followed_by.count : 0;
+            console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | ACTIVE | followers: ' + followers);
             recordProxyStat(proxyUrl, 'ok');
-            return { status: 'banned', description: null };
+            return { status: 'active', followers };
         }
 
-        // Unexpected response
-        console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | ERROR (title: ' + (titleMatch ? titleMatch[1].substring(0, 40) : 'none') + ')');
-        recordProxyStat(proxyUrl, 'error');
-        return { status: 'error', description: null };
+        // {"status":"ok"} with no user = banned/not found
+        // Canary check to rule out rate-limit
+        const rateLimited = await isRateLimited(fetchOptions, proxyUrl);
+        if (rateLimited) {
+            console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | RATE-LIMITED (canary failed) — skip');
+            recordProxyStat(proxyUrl, 'ratelimited');
+            return { status: 'error', followers: null };
+        }
+
+        console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | BANNED');
+        recordProxyStat(proxyUrl, 'ok');
+        return { status: 'banned', followers: null };
+
     } catch (e) {
         console.error('[check] ' + new Date().toISOString() + ' | @' + username + ' | EXCEPTION:', e.message);
         recordProxyStat(proxyUrl, 'error');
-        return { status: 'error', description: null };
+        return { status: 'error', followers: null };
     }
 }
 
-// Canary: fetch a known-always-active account with the same proxy/IP.
-// Returns true if we're rate-limited (canary also shows generic title).
+// Canary: check @cristiano with same session — if no user data returned, we're rate-limited
 async function isRateLimited(fetchOptions, proxyUrl) {
     try {
-        const req = await fetch("https://instagram.com/cristiano/", fetchOptions);
-        const html = await req.text();
-        const ogDescMatch = html.match(/<meta property="og:description" content="([^"]+)"/);
-        if (ogDescMatch && /followers/i.test(ogDescMatch[1])) return false; // canary ok → not rate-limited
-        return true; // canary also broken → rate-limited
+        const req = await fetch("https://www.instagram.com/api/v1/users/web_profile_info/?username=cristiano", fetchOptions);
+        if (req.status !== 200) return true;
+        const json = await req.json();
+        return !(json.data && json.data.user);
     } catch (e) {
-        return true; // network error → treat as rate-limited
+        return true;
     }
 }
 
-function parseFollowers(description) {
-    if (!description) return 'N/A';
-    const match = description.match(/([\d,]+)\s*Followers/i);
-    return match ? match[1] : 'N/A';
+function formatFollowers(count) {
+    if (count === null || count === undefined) return 'N/A';
+    return count.toLocaleString('de-DE');
 }
 
 function formatTime(totalSeconds) {
@@ -171,6 +165,7 @@ function buildRecoveredEmbed(username, followers, timeDisplay) {
 const TOKEN = process.env.DISCORD_TOKEN;
 const ALLOWED_USER_IDS = process.env.ALLOWED_USER_IDS ? process.env.ALLOWED_USER_IDS.split(',') : [];
 const CHECK_INTERVAL = parseInt(process.env.CHECK_INTERVAL) || 90000;
+const IG_SESSION_ID = process.env.IG_SESSION_ID || '';
 
 const allowedUserIds = [...ALLOWED_USER_IDS];
 const banWatchList = [];
@@ -200,7 +195,7 @@ function startUnbanMonitor(username, channelId, startTime) {
                 if (idx > -1) unbanWatchList.splice(idx, 1);
                 const timeDiffSeconds = Math.floor(Math.abs(Date.now() - startTime) / 1000);
                 const timeDisplay = formatTime(timeDiffSeconds);
-                const followers = parseFollowers(result.description);
+                const followers = formatFollowers(result.followers);
                 const channel = await client.channels.fetch(channelId);
                 await channel.send({ embeds: [buildRecoveredEmbed(username, followers, timeDisplay)] });
                 const wl = loadWatchlist();
