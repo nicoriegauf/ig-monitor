@@ -84,6 +84,13 @@ async function check(username) {
 
         const json = await req.json();
 
+        // Explicit rate-limit message
+        if (json.message && json.message.toLowerCase().includes('wait')) {
+            console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | RATE-LIMITED ("Please wait") — skip');
+            recordProxyStat(proxyUrl, 'ratelimited');
+            return { status: 'error', followers: null };
+        }
+
         if (json.data && json.data.user) {
             const followers = json.data.user.edge_followed_by ? json.data.user.edge_followed_by.count : 0;
             console.log('[check] ' + new Date().toISOString() + ' | @' + username + ' | ACTIVE | followers: ' + followers);
@@ -236,16 +243,21 @@ function startBanMonitor(username, channelId, startTime) {
     activeIntervals[username] = intv;
 }
 
-client.once('ready', () => {
+client.once('ready', async () => {
     console.log('We have logged in as ' + client.user.tag);
     const wl = loadWatchlist();
-    for (const entry of wl.unban) {
-        console.log('Resuming unban monitor for @' + entry.username);
-        startUnbanMonitor(entry.username, entry.channelId, entry.startTime);
-    }
-    for (const entry of wl.ban) {
-        console.log('Resuming ban monitor for @' + entry.username);
-        startBanMonitor(entry.username, entry.channelId, entry.startTime);
+    const allEntries = [
+        ...wl.unban.map(e => ({ ...e, type: 'unban' })),
+        ...wl.ban.map(e => ({ ...e, type: 'ban' }))
+    ];
+    // Stagger startup checks by 30s each to avoid rate-limiting
+    for (let i = 0; i < allEntries.length; i++) {
+        const entry = allEntries[i];
+        setTimeout(() => {
+            console.log('Resuming ' + entry.type + ' monitor for @' + entry.username + (i > 0 ? ' (staggered)' : ''));
+            if (entry.type === 'unban') startUnbanMonitor(entry.username, entry.channelId, entry.startTime);
+            else startBanMonitor(entry.username, entry.channelId, entry.startTime);
+        }, i * 30000);
     }
 });
 
@@ -313,7 +325,7 @@ client.on('messageCreate', async (message) => {
         await message.channel.send({ embeds: [new EmbedBuilder().setTitle('📜 Unban Watch List').setDescription(desc).setColor(0x000000)] });
 
     } else if (message.content.startsWith('!unban')) {
-        const args = message.content.split(' ');
+        const args = message.content.trim().split(/\s+/);
         if (args.length < 2 || !args[1]) {
             await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Missing Username').setDescription('Usage: !unban <username>').setColor(0xFF0000)] });
             return;
@@ -350,7 +362,7 @@ client.on('messageCreate', async (message) => {
         await message.channel.send({ embeds: [new EmbedBuilder().setTitle('📜 Ban Watch List').setDescription(desc).setColor(0x000000)] });
 
     } else if (message.content.startsWith('!ban')) {
-        const args = message.content.split(' ');
+        const args = message.content.trim().split(/\s+/);
         if (args.length < 2 || !args[1]) {
             await message.channel.send({ embeds: [new EmbedBuilder().setTitle('❌ Missing Username').setDescription('Usage: !ban <username>').setColor(0xFF0000)] });
             return;
